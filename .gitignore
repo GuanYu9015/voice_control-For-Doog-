@@ -18,3 +18,5 @@ venv/
 
 # (選項) 模型檔案 - 若想保留模型在 Git請告知，否則預設忽略
 models/
+
+GIT_SETUP_GUIDE.md
