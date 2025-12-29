@@ -1,0 +1,28 @@
+# 核心依賴
+numpy>=1.24.0
+scipy>=1.11.0
+pyyaml>=6.0
+
+# 音訊處理
+sounddevice>=0.4.6
+soundfile>=0.12.0
+
+# Sherpa-onnx (語音處理)
+sherpa-onnx>=1.10.0
+
+# ONNX Runtime (GPU)
+onnxruntime-gpu>=1.16.0
+
+# 語音增強 (DeepFilterNet)
+# 注意：需要先安裝 PyTorch (Jetson ARM 版本)
+# pip install torch torchaudio --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v512/pytorch/
+deepfilternet>=0.5.0
+
+# 其他工具
+tqdm>=4.65.0
+requests>=2.31.0
+
+# llama.cpp Python 綁定
+# 需要先設定 CUDA 環境再安裝:
+# CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python
+llama-cpp-python>=0.2.0

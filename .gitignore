@@ -1,0 +1,20 @@
+# 原有設定
+logs
+
+# Python 編譯檔
+__pycache__/
+*.py[cod]
+
+# 環境變數與虛擬環境
+.env
+.venv/
+venv/
+
+# IDE 設定
+.vscode/
+
+# 系統檔
+.DS_Store
+
+# (選項) 模型檔案 - 若想保留模型在 Git請告知，否則預設忽略
+models/

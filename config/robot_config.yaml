@@ -1,0 +1,104 @@
+# 護理輔助車設定
+# Nursing Cart Configuration
+# 
+# 【重要】此檔案是專案參數的唯一來源（Single Source of Truth）
+# - 站點/病房映射
+# - MQTT 連線設定
+# - UI 設定
+# - LLM Prompt 定義在 src/robot/nursing_commands.py 的 build_nursing_cart_prompt()
+
+# ==================== 載具設定 ====================
+robot:
+  type: thouzer
+  
+  thouzer:
+    device_id: "RMS-10C2-AAY67"
+    default_position: "O"  # 預設位置（護理站）
+  
+  interface:
+    type: mqtt  # mqtt / mock
+  
+  default_speed: 0.5
+  max_speed: 1.0
+  min_speed: 0.1
+
+# ==================== MQTT 設定 ====================
+mqtt:
+  broker:
+    host: "192.168.212.1"
+    port: 1883
+  
+  auth:
+    username: "mqtt"
+    # 密碼建議使用環境變數: MQTT_PASSWORD
+    password: "sI7G@DijuY"
+  
+  topics:
+    command: "0/THOUZER_HW/{device_id}/exec/cmd"
+    status: "0/WHISPERER/{device_id}/app_status"
+  
+  keep_alive: 60
+
+# ==================== UI 設定 ====================
+ui:
+  title: "馬偕-台師大 護理輔助車 #1"
+  
+  resources:
+    images: "/home/jetson/Documents/img_mmh"
+    mqtt_api: "/home/jetson/Documents/mqtt_api_mmh"
+  
+  window:
+    width: 800
+    height: 600
+    fullscreen: false
+  
+  font:
+    family: "Microsoft JhengHei"
+    size: 12
+  
+  colors:
+    primary: "#388E3C"
+    secondary: "#FF9800"
+    info: "#2196F3"
+    success: "#4CAF50"
+    warning: "#FFC107"
+    danger: "#F44336"
+    pause: "#9C27B0"
+    resume: "#673AB7"
+    hold: "#E91E63"
+
+# ==================== 站點配置（唯一來源）====================
+# 格式：代號 -> {name, room, image, position: [x, y]}
+# 
+# 代號對照：
+#   O = 護理站
+#   A-R = 1-17號病房（注意：沒有 O，所以 15=P, 16=Q, 17=R）
+#
+# 病房號碼（room）對照：3201-3217
+stations:
+  O: { name: "護理站", room: "O", number: 0, image: "point_O.png", position: [0.375, 0.19] }
+  A: { name: "1號病房", room: "3201", number: 1, image: "point_01.png", position: [0.127, 0.492] }
+  B: { name: "2號病房", room: "3202", number: 2, image: "point_02.png", position: [0.127, 0.56] }
+  C: { name: "3號病房", room: "3203", number: 3, image: "point_03.png", position: [0.127, 0.63] }
+  D: { name: "4號病房", room: "3204", number: 4, image: "point_04.png", position: [0.127, 0.7] }
+  E: { name: "5號病房", room: "3205", number: 5, image: "point_05.png", position: [0.371, 0.7] }
+  F: { name: "6號病房", room: "3206", number: 6, image: "point_06.png", position: [0.371, 0.63] }
+  G: { name: "7號病房", room: "3207", number: 7, image: "point_07.png", position: [0.371, 0.56] }
+  H: { name: "8號病房", room: "3208", number: 8, image: "point_08.png", position: [0.371, 0.49] }
+  I: { name: "9號病房", room: "3209", number: 9, image: "point_09.png", position: [0.546, 0.275] }
+  J: { name: "10號病房", room: "3210", number: 10, image: "point_10.png", position: [0.614, 0.275] }
+  K: { name: "11號病房", room: "3211", number: 11, image: "point_11.png", position: [0.682, 0.275] }
+  L: { name: "12號病房", room: "3212", number: 12, image: "point_12.png", position: [0.75, 0.275] }
+  M: { name: "13號病房", room: "3213", number: 13, image: "point_13.png", position: [0.82, 0.275] }
+  N: { name: "14號病房", room: "3214", number: 14, image: "point_14.png", position: [0.89, 0.275] }
+  P: { name: "15號病房", room: "3215", number: 15, image: "point_15.png", position: [0.752, 0.124] }
+  Q: { name: "16號病房", room: "3216", number: 16, image: "point_16.png", position: [0.683, 0.124] }
+  R: { name: "17號病房", room: "3217", number: 17, image: "point_17.png", position: [0.553, 0.124] }
+
+# ==================== LLM 設定 ====================
+# LLM Prompt 定義在：src/robot/nursing_commands.py
+# 使用函式：build_nursing_cart_prompt(current_location, current_name, user_input)
+# 
+# 如需修改 Prompt，請編輯該檔案中的 prompt 字串
+llm:
+  use_dynamic_prompt: true  # 使用動態 Prompt（包含當前位置）

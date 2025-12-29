@@ -1,0 +1,48 @@
+# 音訊設定
+audio:
+  # 取樣率 (Hz) - ASR 通常需要 16kHz
+  sample_rate: 16000
+  # 通道數 (1=單聲道, 2=立體聲)
+  channels: 1
+  # 每個樣本的位元數
+  bits_per_sample: 16
+  # 音訊 chunk 大小 (毫秒)
+  chunk_ms: 100
+  # 藍牙麥克風裝置名稱 (可用 arecord -l 查看)
+  device_name: null  # null = 使用預設裝置
+
+# VAD 設定
+vad:
+  # 語音偵測閾值 (0.0 ~ 1.0)
+  threshold: 0.5
+  # 靜音結束時間 (秒) - 多久沒聲音視為結束
+  silence_duration: 0.5
+  # 最小語音時長 (秒)
+  min_speech_duration: 0.25
+
+# KWS 喚醒詞設定
+kws:
+  # 喚醒詞列表
+  keywords:
+    - "智護車"
+    - "護理車"
+  # 偵測閾值
+  threshold: 0.5
+  # 喚醒後聆聽時間 (秒)
+  listen_timeout: 10.0
+
+# ASR 設定
+asr:
+  # 模型類型: streaming / offline
+  mode: streaming
+  # 語言
+  language: zh
+  # 最大辨識時間 (秒)
+  max_duration: 30.0
+
+# TTS 設定
+tts:
+  # 語速 (0.5 ~ 2.0)
+  speed: 1.0
+  # 說話者 ID (若模型支援多說話者)
+  speaker_id: 0
