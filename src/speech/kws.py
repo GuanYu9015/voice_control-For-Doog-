@@ -38,6 +38,7 @@ class KeywordSpotter:
         joiner_path: str,
         tokens_path: str,
         keywords: Optional[List[str]] = None,
+        keywords_file: Optional[str] = None,  # 新增：外部 keywords 檔案路徑
         sample_rate: int = 16000,
         threshold: float = 0.25,
         num_threads: int = 2,
@@ -51,7 +52,8 @@ class KeywordSpotter:
             decoder_path: Decoder 模型路徑
             joiner_path: Joiner 模型路徑
             tokens_path: Tokens 檔案路徑
-            keywords: 喚醒詞列表
+            keywords: 喚醒詞列表（若有 keywords_file 則忽略）
+            keywords_file: 外部 keywords 檔案路徑（拼音格式）
             sample_rate: 取樣率
             threshold: 偵測閾值
             num_threads: 執行緒數
@@ -62,6 +64,7 @@ class KeywordSpotter:
         self.joiner_path = joiner_path
         self.tokens_path = tokens_path
         self.keywords = keywords or self.DEFAULT_KEYWORDS
+        self.keywords_file = keywords_file  # 新增
         self.sample_rate = sample_rate
         self.threshold = threshold
         self.num_threads = num_threads
@@ -90,30 +93,39 @@ class KeywordSpotter:
                 return
         
         try:
-            # 建立關鍵字字串（用 / 分隔多個同義詞，用 @ 設定分數）
-            keywords_str = "/".join(self.keywords)
+            # 決定 keywords 檔案路徑
+            # 優先使用外部指定的 keywords_file
+            if self.keywords_file and Path(self.keywords_file).exists():
+                keywords_file = Path(self.keywords_file)
+                print(f"Using external keywords file: {keywords_file}")
+            else:
+                # Fallback: 使用模型目錄中的 keywords.txt
+                model_dir = Path(self.encoder_path).parent
+                keywords_file = model_dir / "keywords.txt"
+                
+                # 如果沒有 keywords.txt，動態創建一個（但格式可能不正確）
+                if not keywords_file.exists():
+                    print(f"Warning: keywords.txt not found, creating default")
+                    with open(keywords_file, 'w', encoding='utf-8') as f:
+                        for kw in self.keywords:
+                            chars = ' '.join(kw)
+                            f.write(f"{chars}\n")
             
-            config = sherpa_onnx.KeywordSpotterConfig(
-                feat_config=sherpa_onnx.FeatureExtractorConfig(
-                    sample_rate=self.sample_rate,
-                    feature_dim=80
-                ),
-                model_config=sherpa_onnx.OnlineModelConfig(
-                    transducer=sherpa_onnx.OnlineTransducerModelConfig(
-                        encoder=self.encoder_path,
-                        decoder=self.decoder_path,
-                        joiner=self.joiner_path
-                    ),
-                    tokens=self.tokens_path,
-                    num_threads=self.num_threads,
-                    provider=self.provider
-                ),
-                keywords=keywords_str,
+            # 使用新版 sherpa-onnx API (1.12.x+)
+            # 注意：sample_rate 必須是 int，provider 使用 cpu（sherpa-onnx 未編譯 GPU）
+            self._kws = sherpa_onnx.KeywordSpotter(
+                tokens=self.tokens_path,
+                encoder=self.encoder_path,
+                decoder=self.decoder_path,
+                joiner=self.joiner_path,
+                keywords_file=str(keywords_file),
+                num_threads=self.num_threads,
+                sample_rate=int(self.sample_rate),  # 必須是 int
+                feature_dim=80,
+                keywords_threshold=self.threshold,
                 num_trailing_blanks=1,
-                keywords_threshold=self.threshold
+                provider="cpu"  # sherpa-onnx 未啟用 GPU
             )
-            
-            self._kws = sherpa_onnx.KeywordSpotter(config)
             self._stream = self._kws.create_stream()
             
             self._is_initialized = True
@@ -141,9 +153,9 @@ class KeywordSpotter:
         # 餵入 KWS
         self._stream.accept_waveform(self.sample_rate, audio_chunk)
         
-        # 檢查是否偵測到關鍵字
+        # 檢查是否偵測到關鍵字（使用新版 API）
         while self._kws.is_ready(self._stream):
-            self._kws.decode(self._stream)
+            self._kws.decode_stream(self._stream)  # 新版 API: decode_stream
         
         result = self._kws.get_result(self._stream)
         
@@ -151,6 +163,7 @@ class KeywordSpotter:
             keyword = result.strip()
             
             # 重置 stream 以便繼續偵測
+            # 使用 create_stream 完全重建（reset_stream 可能不完全清理）
             self._stream = self._kws.create_stream()
             
             # 觸發回調

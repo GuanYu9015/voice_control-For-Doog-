@@ -35,7 +35,7 @@
 |------|----------|------|
 | **DNS** | DeepFilterNet3 | 深度學習噪音抑制（即時串流） |
 | **VAD** | Silero VAD (Sherpa-ONNX) | 語音活動偵測 |
-| **KWS** | Sherpa-ONNX Zipformer | 喚醒詞偵測（開放詞彙） |
+| **KWS** | Sherpa-ONNX Zipformer (zh-en) | 中英雙語喚醒詞偵測 |
 | **ASR** | Sherpa-ONNX Streaming Zipformer | 中文語音辨識（串流） |
 | **TTS** | Sherpa-ONNX VITS (AISHELL-3) | 中文語音合成 |
 | **LLM** | llama.cpp (Qwen 2.5-7B) | 意圖理解與指令生成 |
@@ -46,28 +46,26 @@
 ```
 voice_control/
 ├── config/
-│   ├── model_config.yaml      # 模型路徑設定
-│   └── robot_config.yaml      # 載具/站點/MQTT 設定（Single Source of Truth）
+│   ├── model_config.yaml      # 模型路徑設定（KWS/ASR/TTS/LLM）
+│   ├── audio_config.yaml      # 音訊設定（取樣率、chunk_ms）
+│   └── robot_config.yaml      # 載具/站點/MQTT 設定
 ├── models/                     # AI 模型檔案
 │   ├── dns/                    # DeepFilterNet
 │   ├── vad/                    # Silero VAD
+│   ├── kws/                    # KWS 模型 + keywords.txt
 │   ├── asr/                    # Streaming Zipformer (中文)
 │   ├── tts/                    # VITS 合成器
 │   └── llm/                    # LLM 模型 (GGUF)
 ├── src/
 │   ├── async_pipeline.py       # 異步語音控制 Pipeline（核心）
 │   ├── main_nursing_cart.py    # 護理車應用程式入口
-│   ├── audio/                  # 音訊輸入輸出
+│   ├── audio/                  # 音訊輸入/輸出/降噪
 │   ├── speech/                 # VAD/KWS/ASR/TTS 模組
 │   ├── llm/                    # LLM 推理介面
 │   ├── robot/                  # 載具控制與站點映射
-│   │   ├── thouzer.py          # Thouzer 載具控制器
-│   │   ├── mqtt_controller.py  # MQTT 協議實作
-│   │   ├── station_mapper.py   # 站點/路徑映射
-│   │   └── nursing_commands.py # LLM Prompt 與指令解析
 │   ├── ui/                     # Tkinter 圖形介面
-│   └── utils/                  # 工具函式（簡繁轉換等）
-├── scripts/                    # 安裝腳本
+│   └── utils/                  # 工具函數
+├── scripts/                    # 安裝/下載腳本
 ├── logs/                       # 日誌輸出
 └── start_nursing_cart.sh       # 啟動腳本（含日誌記錄）
 ```
@@ -88,8 +86,13 @@ voice_control/
 #### 1. 安裝 PyTorch（Jetson ARM64）
 
 ```bash
-# JetPack 5.1.2 適用
-pip3 install torch torchvision torchaudio --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v512/pytorch/
+# JetPack 6.x (CUDA 12.6)
+pip3 install torch torchvision torchaudio \
+  --index-url https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch/
+
+# JetPack 5.x (CUDA 11.4)
+pip3 install torch torchvision torchaudio \
+  --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v512/pytorch/
 ```
 
 #### 2. 安裝 llama.cpp（CUDA 支援）
@@ -103,30 +106,28 @@ CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python
 ```bash
 cd /home/jetson/voice_control
 pip install -r requirements.txt
+
+# 額外依賴（簡繁轉換 + 拼音校正）
+pip install opencc-python-reimplemented pypinyin
 ```
 
 #### 4. 下載 AI 模型
 
 ```bash
-# 下載所有必要模型（VAD/ASR/TTS）
+# 下載所有必要模型（VAD/ASR/TTS/KWS）
 bash scripts/download_models.sh
 
 # 下載 LLM 模型（Qwen 2.5-7B，約 4.7GB）
 python scripts/download_llm_models.py
 ```
 
-#### 5. 設定 MQTT 連線
+#### 5. 設定喚醒詞
 
-編輯 `config/robot_config.yaml` 中的 MQTT broker 位址：
+編輯 `models/kws/keywords.txt`（拼音格式）：
 
-```yaml
-mqtt:
-  broker:
-    host: "192.168.212.1"  # 修改為實際 IP
-    port: 1883
-  auth:
-    username: "mqtt"
-    password: "your_password"  # 或使用環境變數 MQTT_PASSWORD
+```
+h ù l ǐ ch ē @护理车
+zh ì h ù ch ē @智护车
 ```
 
 ---
@@ -139,11 +140,11 @@ mqtt:
 # 啟動護理車語音控制（含 UI）
 ./start_nursing_cart.sh
 
-# 使用 Mock Robot（無需實際連線 MQTT，用於測試）
+# 使用 Mock Robot（無需 MQTT，用於測試）
 ./start_nursing_cart.sh --mock-robot
 
-# 查看日誌
-tail -f logs/nursing_cart.log
+# 純命令列模式（無 UI）
+./start_nursing_cart.sh --no-ui
 ```
 
 ### 語音指令範例
@@ -167,6 +168,32 @@ tail -f logs/nursing_cart.log
 ---
 
 ## ⚙️ 系統配置
+
+### KWS 喚醒詞配置
+
+編輯 `config/model_config.yaml`：
+
+```yaml
+kws:
+  model_path: kws/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20
+  keywords_file: kws/keywords.txt
+  threshold: 0.05      # 靈敏度（0.0-1.0，越小越靈敏）
+  keywords_score: 2.0  # 關鍵詞權重
+```
+
+### ASR 誤辨識校正
+
+系統內建拼音校正器（`src/utils/pinyin_corrector.py`），自動修正常見誤辨識：
+
+| 誤辨識 | 修正為 | 類型 |
+|--------|--------|------|
+| 惡號、噩耗、餓號 | 二號 | 數字同音 |
+| 時候病房 | 十號病房 | 連讀誤識 |
+| 時尚號 | 十三號 | 連讀誤識 |
+| 為護理戰 | 回護理站 | 同音詞 |
+| 自顧車、知護車 | 智護車 | 喚醒詞變體 |
+
+如需添加新的校正規則，編輯 `pinyin_corrector.py` 中的 `_direct_mappings` 字典。
 
 ### 站點對照表
 
@@ -239,6 +266,9 @@ self.tts = create_tts(model_dir=str(tts_dirs[0]), speed=0.8)  # 0.5-2.0
 在 `src/speech/kws.py` 新增諧音變體以提高匹配率：
 
 ```python
+# 預設喚醒詞
+DEFAULT_KEYWORDS = ["智護車", "護理車"]
+
 SIMPLIFIED_VARIANTS = {
     "智護車": ["智护车", "自護車", "之護車", "志護車", ...],
     "護理車": ["护理车", "戶理車", "胡理车", ...],
@@ -264,33 +294,42 @@ SIMPLIFIED_VARIANTS = {
 
 ## 🐛 疑難排解
 
-### 1. PyTorch CUDA 不可用
+### 1. DeepFilterNet 初始化失敗
 
 ```bash
-# 檢查 CUDA
-python3 -c "import torch; print(torch.cuda.is_available())"
+# 檢查 torchaudio 版本
+python3 -c "import torchaudio; print(torchaudio.__version__)"
 
-# 重新安裝 Jetson PyTorch
-pip3 install --no-cache-dir torch torchvision torchaudio --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v512/pytorch/
+# 若遇到 CUDA kernel 錯誤，使用 Passthrough
+# 編輯 config/model_config.yaml
+dns:
+  backend: passthrough
 ```
 
-### 2. llama.cpp 無 CUDA 加速
+### 2. KWS 喚醒詞無反應
+
+- 檢查 `models/kws/keywords.txt` 格式是否正確（拼音 + 空格 + @漢字）
+- 調低 `threshold` 值（如 0.05）
+- 確認麥克風音量正常
+
+### 3. OpenCC 未啟用
 
 ```bash
-# 重新編譯 llama-cpp-python
-pip uninstall llama-cpp-python
-CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --no-cache-dir
+# 安裝 OpenCC
+pip install opencc-python-reimplemented
+
+# 驗證
+python3 -c "from opencc import OpenCC; print(OpenCC('s2tw').convert('护理车'))"
 ```
-
-### 3. TTS 發音錯誤（OOV）
-
-系統已內建數字轉中文機制（`10號` → `十號`），若仍有問題，可在 `src/async_pipeline.py` 的 `_convert_numbers_to_chinese()` 新增對照表。
 
 ### 4. MQTT 連線失敗
 
 ```bash
 # 測試 MQTT broker 連線
 mosquitto_sub -h 192.168.212.1 -p 1883 -u mqtt -P <password> -t '#'
+
+# 使用 mock-robot 模式測試
+./start_nursing_cart.sh --mock-robot
 ```
 
 ---
@@ -299,15 +338,14 @@ mosquitto_sub -h 192.168.212.1 -p 1883 -u mqtt -P <password> -t '#'
 
 本專案為內部研究專案，如需引用或修改請聯繫專案維護者。
 
-### 核心技術貢獻
+### 核心技術
 
-- **Sherpa-ONNX**：語音處理框架
+- **Sherpa-ONNX**：語音處理框架（KWS/VAD/ASR/TTS）
 - **llama.cpp**：LLM 推理引擎
-- **DeepFilterNet**：降噪技術
+- **DeepFilterNet**：深度學習降噪
 - **Qwen Team**：LLM 模型
 
 ---
 
-## 資訊
- 
-最後更新：2025-12-29
+最後更新：2025-12-30
+

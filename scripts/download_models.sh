@@ -87,12 +87,12 @@ echo "=== 下載 KWS 模型 (喚醒詞偵測) ==="
 KWS_DIR="$MODELS_DIR/kws"
 
 # 中文 KWS 模型
-KWS_ZH_DIR="$KWS_DIR/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01"
+KWS_ZH_DIR="$KWS_DIR/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
 if [ ! -d "$KWS_ZH_DIR" ]; then
     cd "$KWS_DIR"
-    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
-    tar xvf sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
-    rm sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01.tar.bz2
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+    tar xvf sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+    rm sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
     echo "KWS 模型下載完成"
 else
     echo "KWS 模型已存在，跳過"

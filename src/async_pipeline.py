@@ -131,6 +131,25 @@ class AsyncVoiceControlPipeline:
                 return yaml.safe_load(f)
         return {}
     
+    def _get_model_path(self, relative_path: str) -> Path:
+        """
+        將相對路徑轉換為絕對路徑
+        
+        Args:
+            relative_path: 相對於 models/ 的路徑
+        
+        Returns:
+            完整的絕對路徑
+        """
+        # 如果已經是絕對路徑，直接返回
+        path = Path(relative_path)
+        if path.is_absolute():
+            return path
+        
+        # 否則，假設是相對於 models/ 目錄
+        return Path("models") / relative_path
+    
+    
     def _init_modules(self) -> None:
         """初始化各模組"""
         print("=== 初始化非同步語音控制模組 ===")
@@ -156,52 +175,174 @@ class AsyncVoiceControlPipeline:
         # 3. DNS 語音增強
         from src.audio.dns import create_dns
         dns_cfg = self.model_config.get('dns', {})
+        backend = dns_cfg.get('backend', 'auto')
         self.dns = create_dns(
-            backend=dns_cfg.get('backend', 'auto'),
+            backend=backend,
             sample_rate=sample_rate
         )
-        print(f"  [{'OK' if self.dns.is_available else '--'}] DNS")
+        
+        # 顯示 DNS 實際使用的模型
+        dns_model = 'Unknown'
+        if hasattr(self.dns, '__class__'):
+            class_name = self.dns.__class__.__name__
+            if 'DeepFilterNet' in class_name:
+                dns_model = 'DeepFilterNet3'
+            elif 'Onnx' in class_name:
+                dns_model = 'ONNX'
+            elif 'Passthrough' in class_name:
+                dns_model = 'Passthrough'
+        
+        print(f"  [{'OK' if self.dns.is_available else '--'}] DNS ({dns_model})")
         
         # 4. VAD
         from src.speech.vad import create_vad
-        vad_cfg = self.audio_config.get('vad', {})
-        self.vad = create_vad(
-            models_dir="models",
-            threshold=vad_cfg.get('threshold', 0.5)
-        )
-        print(f"  [{'OK' if self.vad and self.vad.is_available else '--'}] VAD")
+        vad_cfg = self.model_config.get('vad', {})
+        
+        # 從 config 讀取模型路徑
+        model_path = vad_cfg.get('model_path', '')
+        vad_display = ''
+        if model_path:
+            full_model_path = self._get_model_path(model_path)
+            vad_display = model_path
+            self.vad = create_vad(
+                model_path=str(full_model_path),
+                threshold=vad_cfg.get('threshold', 0.5)
+            )
+        else:
+            # Fallback: 使用預設路徑（models/vad/silero_vad.onnx）
+            vad_display = 'silero_vad.onnx'
+            self.vad = create_vad(
+                models_dir="models",
+                threshold=vad_cfg.get('threshold', 0.5)
+            )
+        
+        print(f"  [{'OK' if self.vad and self.vad.is_available else '--'}] VAD ({vad_display})")
         
         # 5. KWS
         if self.use_wake_word:
-            from src.speech.kws import SimpleKeywordMatcher
-            kws_cfg = self.audio_config.get('kws', {})
-            keywords = kws_cfg.get('keywords', ['智護車', '護理車'])
-            self.kws = SimpleKeywordMatcher(keywords=keywords)
-            print(f"  [OK] KWS (keywords: {keywords})")
+            # 嘗試使用 Sherpa-ONNX KWS（效能更好）
+            try:
+                from src.speech.kws import KeywordSpotter
+                kws_cfg = self.model_config.get('kws', {})
+                
+                # 從 model_config.yaml 讀取模型路徑
+                model_path = self._get_model_path(kws_cfg.get('model_path', 'kws/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01'))
+                
+                # 自動偵測模型檔案（支援不同版本的模型）
+                model_dir = Path(model_path)
+                encoder_files = list(model_dir.glob("encoder-*.onnx"))
+                decoder_files = list(model_dir.glob("decoder-*.onnx"))
+                joiner_files = list(model_dir.glob("joiner-*.onnx"))
+                
+                # 優先選擇非 int8 版本的 chunk-16 模型
+                def select_model(files, prefer_pattern="chunk-16"):
+                    non_int8 = [f for f in files if "int8" not in f.name]
+                    preferred = [f for f in non_int8 if prefer_pattern in f.name]
+                    return str(preferred[0]) if preferred else str(non_int8[0]) if non_int8 else str(files[0])
+                
+                encoder_path = select_model(encoder_files) if encoder_files else str(model_dir / "encoder.onnx")
+                decoder_path = select_model(decoder_files) if decoder_files else str(model_dir / "decoder.onnx")
+                joiner_path = select_model(joiner_files) if joiner_files else str(model_dir / "joiner.onnx")
+                tokens_path = str(model_dir / "tokens.txt")
+                
+                # 從 config 讀取 keywords_file（拼音格式）
+                keywords_file_cfg = kws_cfg.get('keywords_file', '')
+                keywords_file = str(self._get_model_path(keywords_file_cfg)) if keywords_file_cfg else None
+                
+                # 建立 KeywordSpotter
+                self.kws = KeywordSpotter(
+                    encoder_path=encoder_path,
+                    decoder_path=decoder_path,
+                    joiner_path=joiner_path,
+                    tokens_path=tokens_path,
+                    keywords=None,  # 使用 keywords_file
+                    keywords_file=keywords_file,  # 從 config 讀取
+                    threshold=kws_cfg.get('threshold', 0.25),
+                    provider="cpu"  # sherpa-onnx 未編譯 GPU
+                )
+                
+                # 顯示 KWS 資訊（單行）
+                kws_model = kws_cfg.get('model_path', 'default').split('/')[-1]  # 只顯示最後一段
+                print(f"  [{'OK' if self.kws.is_available else 'FAIL'}] KWS (Sherpa-ONNX: {kws_model})")
+                
+                # 如果 Sherpa-ONNX KWS 初始化失敗，fallback 到 SimpleKeywordMatcher
+                if not self.kws.is_available:
+                    raise Exception("Sherpa-ONNX KWS not available")
+                    
+            except Exception as e:
+                print(f"  [WARN] Sherpa-ONNX KWS failed: {e}")
+                print(f"  [INFO] Falling back to SimpleKeywordMatcher")
+                
+                # Fallback: 使用 SimpleKeywordMatcher
+                from src.speech.kws import SimpleKeywordMatcher
+                kws_cfg = self.audio_config.get('kws', {})
+                keywords = kws_cfg.get('keywords', ['智護車', '護理車'])
+                self.kws = SimpleKeywordMatcher(keywords=keywords)
+                print(f"  [OK] KWS (Simple, keywords: {keywords})")
         else:
             self.kws = None
             print("  [--] KWS (disabled)")
         
         # 6. ASR
         from src.speech.asr import create_streaming_asr
-        asr_dir = Path("models/asr")
-        model_dirs = list(asr_dir.glob("*streaming*zipformer*"))
-        if model_dirs:
-            self.asr = create_streaming_asr(model_dir=str(model_dirs[0]))
+        asr_cfg = self.model_config.get('asr', {}).get('streaming', {})
+        
+        # 從 config 讀取 encoder 路徑，推斷模型目錄
+        encoder_path = asr_cfg.get('encoder', '')
+        asr_display = ''
+        if encoder_path:
+            # 從 encoder 路徑推斷模型目錄
+            full_encoder_path = self._get_model_path(encoder_path)
+            model_dir = str(Path(full_encoder_path).parent)
+            asr_display = str(Path(encoder_path).parent).split('/')[-1]  # 只顯示目錄名
+            self.asr = create_streaming_asr(model_dir=model_dir)
         else:
-            self.asr = create_streaming_asr()
-        print(f"  [{'OK' if self.asr and self.asr.is_available else '--'}] ASR")
+            # Fallback: glob 搜尋
+            asr_dir = Path("models/asr")
+            model_dirs = list(asr_dir.glob("*streaming*zipformer*"))
+            if model_dirs:
+                asr_display = model_dirs[0].name
+                self.asr = create_streaming_asr(model_dir=str(model_dirs[0]))
+            else:
+                asr_display = 'default'
+                self.asr = create_streaming_asr()
+        
+        print(f"  [{'OK' if self.asr and self.asr.is_available else '--'}] ASR ({asr_display})")
         
         # 7. TTS
         from src.speech.tts import create_tts
-        tts_dir = Path("models/tts")
-        tts_dirs = list(tts_dir.glob("*vits*"))
-        # speed=0.8 讓語速慢一點（1.0 為正常，0.5 最慢，2.0 最快）
-        if tts_dirs:
-            self.tts = create_tts(model_dir=str(tts_dirs[0]), speed=0.8)
+        tts_cfg = self.model_config.get('tts', {})
+        
+        # 從 config 讀取模型路徑
+        model_path = tts_cfg.get('model_path', '')
+        tts_display = ''
+        if model_path:
+            full_model_path = self._get_model_path(model_path)
+            if Path(full_model_path).exists():
+                tts_display = model_path.split('/')[-1]  # 只顯示最後一段
+                self.tts = create_tts(model_dir=str(full_model_path), speed=0.8)
+            else:
+                # Fallback: glob 搜尋
+                tts_dir = Path("models/tts")
+                tts_dirs = list(tts_dir.glob("*vits*"))
+                if tts_dirs:
+                    tts_display = tts_dirs[0].name
+                    self.tts = create_tts(model_dir=str(tts_dirs[0]), speed=0.8)
+                else:
+                    tts_display = 'default'
+                    self.tts = create_tts(speed=0.6)
         else:
-            self.tts = create_tts(speed=0.6)
-        print(f"  [{'OK' if self.tts and self.tts.is_available else '--'}] TTS")
+            # Fallback: glob 搜尋
+            tts_dir = Path("models/tts")
+            tts_dirs = list(tts_dir.glob("*vits*"))
+            if tts_dirs:
+                tts_display = tts_dirs[0].name
+                self.tts = create_tts(model_dir=str(tts_dirs[0]), speed=0.8)
+            else:
+                tts_display = 'default'
+                self.tts = create_tts(speed=0.6)
+        
+        print(f"  [{'OK' if self.tts and self.tts.is_available else '--'}] TTS ({tts_display}, speed=0.8x)")
         
         # 8. LLM
         self._init_llm()
@@ -226,13 +367,19 @@ class AsyncVoiceControlPipeline:
             if llm_backend == 'llama_cpp':
                 llama_cfg = llm_cfg.get('llama_cpp', {})
                 model_path = llama_cfg.get('model_path', '')
+                n_ctx = llama_cfg.get('n_ctx', 4096)
                 
                 self.llm = create_llm(
                     backend='llama_cpp',
                     model_path=model_path,
                     system_prompt="",  # 動態 Prompt
-                    n_ctx=llama_cfg.get('n_ctx', 4096)
+                    n_ctx=n_ctx
                 )
+                
+                # 顯示 LLM 資訊（單行）
+                llm_display = model_path.split('/')[-1] if model_path else 'default'
+                print(f"  [{'OK' if self.llm.is_available else '--'}] LLM (llama.cpp: {llm_display}, ctx={n_ctx})")
+                return
             else:
                 self.llm = create_llm(use_mock=True, system_prompt="")
         
@@ -315,13 +462,25 @@ class AsyncVoiceControlPipeline:
             
             # 喚醒詞模式檢查
             if self.use_wake_word and not self._is_listening:
-                # 未喚醒：持續 ASR 以偵測喚醒詞
-                if self.asr and self.asr.is_available:
-                    text, _ = self.asr.process(audio_chunk)
-                    if text and self.kws:
-                        keyword = self.kws.check(text)
-                        if keyword:
-                            self._on_wake(keyword)
+                # 未喚醒：嘗試用 Sherpa-ONNX KWS 直接處理音訊
+                if self.kws and hasattr(self.kws, 'process'):
+                    # Sherpa-ONNX KeywordSpotter（直接處理音訊）
+                    keyword = self.kws.process(audio_chunk)
+                    if keyword:
+                        self._on_wake(keyword)
+                else:
+                    # SimpleKeywordMatcher（需要 ASR 文字）
+                    if self.asr and self.asr.is_available:
+                        text, _ = self.asr.process(audio_chunk)
+                        if text and self.kws:
+                            kws_result = self.kws.check(text)
+                            if kws_result:
+                                # SimpleKeywordMatcher.check() 回傳 (keyword, remaining) tuple
+                                if isinstance(kws_result, tuple):
+                                    keyword, _ = kws_result
+                                else:
+                                    keyword = kws_result
+                                self._on_wake(keyword)
             else:
                 # 已喚醒或持續聆聽模式
                 if self.asr and self.asr.is_available:
@@ -329,7 +488,8 @@ class AsyncVoiceControlPipeline:
                     
                     if is_final and text:
                         # 檢查是否為喚醒詞（可能是新的喚醒詞中斷）
-                        if self.kws:
+                        # 只有 SimpleKeywordMatcher 有 check() 方法
+                        if self.kws and hasattr(self.kws, 'check'):
                             kws_result = self.kws.check(text)
                             if kws_result:
                                 keyword, remaining = kws_result
@@ -350,7 +510,9 @@ class AsyncVoiceControlPipeline:
                                     if self.use_wake_word:
                                         self._is_listening = False
                                         self.asr.reset()
-                                
+                                        # 通知 UI 回到等待狀態
+                                        if self.on_status:
+                                            self.on_status('processing', None)
                                 continue
                         
                         # 簡體轉繁體
@@ -367,6 +529,9 @@ class AsyncVoiceControlPipeline:
                         if self.use_wake_word:
                             self._is_listening = False
                             self.asr.reset()
+                            # 通知 UI 進入處理狀態
+                            if self.on_status:
+                                self.on_status('processing', text_traditional)
             
             # 檢查聆聽超時
             if self._is_listening:
@@ -375,6 +540,9 @@ class AsyncVoiceControlPipeline:
                     self._is_listening = False
                     if self.asr:
                         self.asr.reset()
+                    # 通知 UI 回到等待狀態
+                    if self.on_status:
+                        self.on_status('idle', None)
         
         self.audio_input.stop()
         print("[AudioWorker] Stopped")
@@ -550,6 +718,9 @@ class AsyncVoiceControlPipeline:
                 print(f"[LLMWorker] Error: {e}")
             finally:
                 self._is_llm_processing = False
+                # 通知 UI 回到待機狀態
+                if self.on_status:
+                    self.on_status('idle', None)
         
         print("[LLMWorker] Stopped")
     
@@ -642,21 +813,25 @@ class AsyncVoiceControlPipeline:
         Returns:
             繁體中文文字（已修正誤辨識）
         """
+        # 1. 簡體轉繁體
         try:
             from src.utils.s2t import s2t
             result = s2t(text)
         except ImportError:
-            # 若無法導入，直接用原文
             result = text
         
-        # ASR 常見誤辨識修正
+        # 2. 拼音校正（自動校正同音誤辨識）
+        try:
+            from src.utils.pinyin_corrector import correct_pinyin
+            result = correct_pinyin(result)
+        except ImportError:
+            pass
+        
+        # 3. 字典補充校正（拼音校正可能漏掉的特殊情況）
         asr_corrections = {
-            "跟水": "跟隨",
-            "根水": "跟隨",
-            "跟谁": "跟隨",
-            "跟誰": "跟隨",
-            "根随": "跟隨",
-            "根隨": "跟隨",
+            "跟水": "跟隨", "根水": "跟隨",
+            "跟谁": "跟隨", "跟誰": "跟隨",
+            "根随": "跟隨", "根隨": "跟隨",
         }
         for wrong, correct in asr_corrections.items():
             result = result.replace(wrong, correct)

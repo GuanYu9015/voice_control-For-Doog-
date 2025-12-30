@@ -21,3 +21,4 @@ models/
 
 GIT_SETUP_GUIDE.md
 .env.example
+test_kws.py
