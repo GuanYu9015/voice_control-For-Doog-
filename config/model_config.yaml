@@ -36,11 +36,16 @@ kws:
 asr:
   # Streaming ASR (即時辨識) - 使用 Streaming Zipformer
   streaming:
-    encoder: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/encoder-epoch-99-avg-1.onnx
-    decoder: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/decoder-epoch-99-avg-1.onnx
-    joiner: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/joiner-epoch-99-avg-1.onnx
-    tokens: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/tokens.txt
+    # encoder: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/encoder-epoch-99-avg-1.onnx
+    # decoder: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/decoder-epoch-99-avg-1.onnx
+    # joiner: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/joiner-epoch-99-avg-1.onnx
+    # tokens: asr/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/tokens.txt
   
+    encoder: asr/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30/encoder.int8.onnx
+    decoder: asr/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30/decoder.onnx
+    joiner: asr/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30/joiner.int8.onnx
+    tokens: asr/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30/tokens.txt
+
   # Offline ASR (離線辨識，精度較高)
   offline:
     model_path: asr/sherpa-onnx-paraformer-zh-2023-09-14

@@ -33,16 +33,62 @@ echo ""
 echo "=== 下載 ASR 模型 (中文 Streaming Zipformer) ==="
 ASR_DIR="$MODELS_DIR/asr"
 
-# Streaming ASR - 中文
-ASR_STREAMING_DIR="$ASR_DIR/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23"
-if [ ! -d "$ASR_STREAMING_DIR" ]; then
+# Streaming ASR - 中文 (舊版 14M，較小)
+ASR_STREAMING_OLD_DIR="$ASR_DIR/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23"
+if [ ! -d "$ASR_STREAMING_OLD_DIR" ]; then
     cd "$ASR_DIR"
     wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2
     tar xvf sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2
     rm sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2
-    echo "ASR Streaming 模型下載完成"
+    echo "ASR Streaming (14M) 模型下載完成"
 else
-    echo "ASR Streaming 模型已存在，跳過"
+    echo "ASR Streaming (14M) 模型已存在，跳過"
+fi
+
+# ============================
+# ASR 新版模型 (2025-06-30)
+# 提供三種量化版本供選擇
+# ============================
+echo ""
+echo "=== 下載 ASR 新版模型 (2025-06-30) ==="
+
+# 新版 ASR - FP32 (原版，精度最高)
+ASR_NEW_FP32_DIR="$ASR_DIR/sherpa-onnx-streaming-zipformer-zh-2025-06-30"
+if [ ! -d "$ASR_NEW_FP32_DIR" ]; then
+    cd "$ASR_DIR"
+    echo "下載 ASR FP32 版本（精度最高）..."
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-2025-06-30.tar.bz2
+    tar xvf sherpa-onnx-streaming-zipformer-zh-2025-06-30.tar.bz2
+    rm sherpa-onnx-streaming-zipformer-zh-2025-06-30.tar.bz2
+    echo "ASR (FP32) 模型下載完成"
+else
+    echo "ASR (FP32) 模型已存在，跳過"
+fi
+
+# 新版 ASR - FP16 (推薦 GPU 使用)
+ASR_NEW_FP16_DIR="$ASR_DIR/sherpa-onnx-streaming-zipformer-zh-fp16-2025-06-30"
+if [ ! -d "$ASR_NEW_FP16_DIR" ]; then
+    cd "$ASR_DIR"
+    echo "下載 ASR FP16 版本（推薦 GPU 使用）..."
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-fp16-2025-06-30.tar.bz2
+    tar xvf sherpa-onnx-streaming-zipformer-zh-fp16-2025-06-30.tar.bz2
+    rm sherpa-onnx-streaming-zipformer-zh-fp16-2025-06-30.tar.bz2
+    echo "ASR (FP16) 模型下載完成"
+else
+    echo "ASR (FP16) 模型已存在，跳過"
+fi
+
+# 新版 ASR - INT8 (最小最快，適合 CPU)
+ASR_NEW_INT8_DIR="$ASR_DIR/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"
+if [ ! -d "$ASR_NEW_INT8_DIR" ]; then
+    cd "$ASR_DIR"
+    echo "下載 ASR INT8 版本（最小最快）..."
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2
+    tar xvf sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2
+    rm sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2
+    echo "ASR (INT8) 模型下載完成"
+else
+    echo "ASR (INT8) 模型已存在，跳過"
 fi
 
 # Paraformer (離線, 精度較高) - 可選

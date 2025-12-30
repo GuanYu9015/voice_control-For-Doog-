@@ -295,7 +295,23 @@ class AsyncVoiceControlPipeline:
             full_encoder_path = self._get_model_path(encoder_path)
             model_dir = str(Path(full_encoder_path).parent)
             asr_display = str(Path(encoder_path).parent).split('/')[-1]  # 只顯示目錄名
-            self.asr = create_streaming_asr(model_dir=model_dir)
+            
+            # 從 config 讀取其他模型路徑（如果有）
+            decoder_cfg = asr_cfg.get('decoder', '')
+            joiner_cfg = asr_cfg.get('joiner', '')
+            tokens_cfg = asr_cfg.get('tokens', '')
+            
+            decoder_path = str(self._get_model_path(decoder_cfg)) if decoder_cfg else None
+            joiner_path = str(self._get_model_path(joiner_cfg)) if joiner_cfg else None
+            tokens_path = str(self._get_model_path(tokens_cfg)) if tokens_cfg else None
+            
+            self.asr = create_streaming_asr(
+                model_dir=model_dir,
+                encoder_path=str(full_encoder_path),
+                decoder_path=decoder_path,
+                joiner_path=joiner_path,
+                tokens_path=tokens_path
+            )
         else:
             # Fallback: glob 搜尋
             asr_dir = Path("models/asr")

@@ -324,22 +324,100 @@ def create_streaming_asr(
     
     model_dir = Path(model_dir)
     
-    encoder = str(model_dir / "encoder-epoch-99-avg-1.onnx")
-    decoder = str(model_dir / "decoder-epoch-99-avg-1.onnx")
-    joiner = str(model_dir / "joiner-epoch-99-avg-1.onnx")
-    tokens = str(model_dir / "tokens.txt")
+    # 優先使用 kwargs 傳入的路徑
+    encoder = kwargs.pop('encoder_path', None)
+    decoder = kwargs.pop('decoder_path', None)
+    joiner = kwargs.pop('joiner_path', None)
+    tokens = kwargs.pop('tokens_path', None)
     
+    # 如果未指定，嘗試自動偵測
+    if not encoder:
+        # 嘗試常見的檔名模式
+        candidates = [
+            model_dir / "encoder.onnx",
+            model_dir / "encoder.int8.onnx",
+            model_dir / "encoder.fp16.onnx",
+            model_dir / "encoder-epoch-99-avg-1.onnx",
+            model_dir / "encoder-epoch-99-avg-1.int8.onnx",
+        ]
+        # 也嘗試 glob 搜尋
+        if not any(p.exists() for p in candidates):
+            glob_files = list(model_dir.glob("encoder*.onnx"))
+            if glob_files:
+                candidates.insert(0, glob_files[0])
+        
+        for p in candidates:
+            if p.exists():
+                encoder = str(p)
+                break
+    
+    if not decoder:
+        # 根據 encoder 檔名推斷 decoder (e.g., encoder.onnx -> decoder.onnx)
+        if encoder:
+            enc_name = Path(encoder).name
+            dec_name = enc_name.replace("encoder", "decoder")
+            if (model_dir / dec_name).exists():
+                decoder = str(model_dir / dec_name)
+        
+        # 如果推斷失敗，嘗試常見檔名
+        if not decoder:
+             candidates = [
+                model_dir / "decoder.onnx",
+                model_dir / "decoder.int8.onnx",
+                model_dir / "decoder.fp16.onnx",
+                model_dir / "decoder-epoch-99-avg-1.onnx",
+                model_dir / "decoder-epoch-99-avg-1.int8.onnx",
+            ]
+             for p in candidates:
+                if p.exists():
+                    decoder = str(p)
+                    break
+
+    if not joiner:
+        if encoder:
+            enc_name = Path(encoder).name
+            join_name = enc_name.replace("encoder", "joiner")
+            if (model_dir / join_name).exists():
+                joiner = str(model_dir / join_name)
+        
+        if not joiner:
+            candidates = [
+                model_dir / "joiner.onnx",
+                model_dir / "joiner.int8.onnx",
+                model_dir / "joiner.fp16.onnx",
+                model_dir / "joiner-epoch-99-avg-1.onnx",
+                model_dir / "joiner-epoch-99-avg-1.int8.onnx",
+            ]
+            for p in candidates:
+                if p.exists():
+                    joiner = str(p)
+                    break
+    
+    if not tokens:
+        tokens = str(model_dir / "tokens.txt")
+
     # 檢查檔案是否存在
-    if not all(Path(p).exists() for p in [encoder, decoder, joiner, tokens]):
-        print(f"ASR model files not found in: {model_dir}")
-        print("Please download the model first")
+    missing = []
+    if not encoder or not Path(encoder).exists(): missing.append("encoder")
+    if not decoder or not Path(decoder).exists(): missing.append("decoder")
+    if not joiner or not Path(joiner).exists(): missing.append("joiner")
+    if not tokens or not Path(tokens).exists(): missing.append("tokens")
+    
+    if missing:
+        print(f"ASR model files missing ({', '.join(missing)}) in: {model_dir}")
+        print("Please download the model first or check config")
+        # 列出目錄內容以便除錯
+        if model_dir.exists():
+            print(f"Contents of {model_dir}:")
+            for f in model_dir.iterdir():
+                print(f"  {f.name}")
         return None
     
     return StreamingASR(
-        encoder_path=encoder,
-        decoder_path=decoder,
-        joiner_path=joiner,
-        tokens_path=tokens,
+        encoder_path=str(encoder),
+        decoder_path=str(decoder),
+        joiner_path=str(joiner),
+        tokens_path=str(tokens),
         **kwargs
     )
 
